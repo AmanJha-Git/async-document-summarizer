@@ -1,4 +1,4 @@
-import os
+```python
 import sys
 import streamlit as st
 from pathlib import Path
@@ -10,55 +10,105 @@ SRC_DIR = APP_DIR / "src"
 
 sys.path.insert(0, str(SRC_DIR))
 
-# Correct import matching your actual folder structure (src -> document_summarizer)
+# Import the summarizer
 from document_summarizer.summarizer import LLMSummarizer
 
+
+# Document class
 class Document:
     def __init__(self, source: Path, title: str, text: str):
         self.source = source
         self.title = title
         self.text = text
 
-st.set_page_config(page_title="AI Document Summarizer", page_icon="📄", layout="centered")
 
+# Streamlit page configuration
+st.set_page_config(
+    page_title="AI Document Summarizer",
+    page_icon="📄",
+    layout="centered"
+)
+
+# Application title
 st.title("📄 AI Document Summarizer")
-st.write("Upload a PDF or text document to get an instant summary powered by Gemini.")
 
-# Secure API Key input for users visiting your site
-api_key_input = st.text_input("Gemini API Key", type="password", value=os.getenv("GEMINI_API_KEY", ""))
+st.write(
+    "Upload a PDF or text document to get an instant summary powered by Gemini."
+)
 
-uploaded_file = st.file_uploader("Choose a document", type=["txt", "pdf"])
+
+# Retrieve Gemini API key from Streamlit Secrets
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except KeyError:
+    st.error(
+        "Gemini API key is not configured. "
+        "Please add GEMINI_API_KEY in Streamlit Cloud Secrets."
+    )
+    st.stop()
+
+
+# Document uploader
+uploaded_file = st.file_uploader(
+    "Choose a document",
+    type=["txt", "pdf"]
+)
+
 
 if uploaded_file is not None:
-    temp_path = Path("temp_" + uploaded_file.name)
-    with open(temp_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
 
+    # Read uploaded document
     try:
-        if temp_path.suffix.lower() == ".pdf":
-            reader = PdfReader(temp_path)
-            text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-        else:
-            text = temp_path.read_text(encoding="utf-8")
+        if uploaded_file.name.lower().endswith(".pdf"):
 
-        document = Document(source=temp_path, title=uploaded_file.name, text=text)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
+            reader = PdfReader(uploaded_file)
 
-    if st.button("Generate Summary"):
-        if not api_key_input:
-            st.error("Please enter a valid Gemini API Key.")
-        elif not text.strip():
-            st.warning("The uploaded document appears to be empty.")
+            text = "\n".join(
+                page.extract_text() or ""
+                for page in reader.pages
+            )
+
         else:
+            text = uploaded_file.getvalue().decode("utf-8")
+
+        document = Document(
+            source=Path(uploaded_file.name),
+            title=uploaded_file.name,
+            text=text
+        )
+
+        st.success(f"Uploaded successfully: {uploaded_file.name}")
+
+    except Exception as e:
+        st.error(f"Error reading document: {e}")
+        st.stop()
+
+
+    # Generate summary button
+    if st.button("Generate Summary", type="primary"):
+
+        if not text.strip():
+
+            st.warning(
+                "The uploaded document appears to be empty "
+                "or contains no extractable text."
+            )
+
+        else:
+
             with st.spinner("⏳ Connecting to Gemini..."):
+
                 try:
-                    summarizer = LLMSummarizer(api_key=api_key_input)
+                    summarizer = LLMSummarizer(api_key=api_key)
+
                     summary = summarizer.summarize(document)
-                    
+
                     st.success("Summary generated successfully!")
+
                     st.markdown("### 📌 Summary Result")
+
                     st.write(summary)
+
                 except Exception as e:
+
                     st.error(f"An error occurred: {e}")
